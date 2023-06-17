@@ -2,14 +2,11 @@
 
 This is a plugin for the [oobabooga/text-generation-webui](https://github.com/oobabooga/text-generation-webui)
 
-This plugin forces models to output valid JSON of a specified schema using [JSONFormer](https://github.com/1rgs/jsonformer)
+This plugin forces models to output valid JSON of a specified schema. Most of the code was strongly inspired by [JSONFormer](https://github.com/1rgs/jsonformer) but adapted for use with oobabooga and some additional tweaks made to better handle the weird variety of output that can come from quite small models.
 
-Install by cloning this repo into the `extensions` directory of `text-generation-webui` and then installing the dependencies into same conda environment that your `text-generation-webui` runs in. e.g.
+Install by cloning this repo into the `extensions` directory of `text-generation-webui` e.g.
 ```shell
-$ conda activate textgen
 $ cd text-generation-webui/extensions
 $ git clone https://github.com/hallucinate-games/oobabooga-jsonformer-plugin.git jsonformer
-$ cd jsonformer
-$ pip install -r requirements.txt
 ```
 Then restart the server with `--extensions jsonformer` or enable it via the UI.
