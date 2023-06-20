@@ -27,6 +27,7 @@ params = {
             }
         }"""),
     "manual_prompt": False,
+    "enabled": True,
 }
 
 class GenerationSettings(TypedDict):
@@ -313,6 +314,10 @@ def custom_generate_reply(question, original_question, seed, state, eos_token, s
     else:
         generate_func = text_generation.generate_reply_HF
 
+    if not params['enabled']:
+        # Cede control back to oobabooga, the user has requested that JSONformer not interfere
+        return generate_func(question, original_question, seed, state, eos_token, stopping_strings, is_chat)
+
     # Since we generate many times, we need to lock the seed,
     # so we have to account for when the seed is "random" and
     # lock it for the course of the run. It is still random from
@@ -376,6 +381,8 @@ def ui():
         `array` contains `item` field, which is a schema object representing the type of the items in the array
 
         Note that the schema is permissive to extra fields. These fields are ignored by JSONformer, but they may influence the behavior of the LLM, for example, you can forbid or allow empty arrays like in the example. This kind of hinting is not bullet-proof, but is surprisingly effective if utilized with care."""))
+    with gr.Row():
+        enable_checkbox = gr.Checkbox(params['enabled'], label="Enable JSONformer plugin", info="Disabling this setting causes prompts to be executed normally")
 
     with gr.Row():
         schema_codebox = gr.Code(params['json_schema'], lines=14, language='json', label='JSON schema', interactive=True)
@@ -394,11 +401,12 @@ def ui():
     with gr.Row():
         save_settings_button = gr.Button("Save JSONformer settings", variant='primary')
 
-    def save_settings(schema, manual_prompt):
+    def save_settings(enable, schema, manual_prompt):
         try:
             json_schema = json.loads(schema)
             Jsonformer.validate_schema(json_schema)
             params.update({
+                "enabled": enable,
                 "json_schema": schema,
                 "manual_prompt": manual_prompt,
             })
@@ -407,5 +415,5 @@ def ui():
         except Exception as e:
             return gr.update(value=f"ERROR saving settings: {e}", visible=True)
 
-    save_settings_button.click(save_settings, [schema_codebox, manual_prompt_checkbox], [info_box])
+    save_settings_button.click(save_settings, [enable_checkbox, schema_codebox, manual_prompt_checkbox], [info_box], api_name="set_jsonformer_settings")
 
