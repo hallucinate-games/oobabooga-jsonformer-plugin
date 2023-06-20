@@ -41,6 +41,7 @@ class Jsonformer:
         json_schema: Dict[str, Any],
         prompt: str,
         temperature: float,
+        manual_prompt: bool = False,
         max_array_length: int = 10,
     ):
         # Generation func accepts a prompt and generation settings
@@ -48,6 +49,7 @@ class Jsonformer:
         self.json_schema = json_schema
         self.prompt = prompt
         self.temperature = temperature
+        self.manual_prompt = manual_prompt
         self.max_array_length = max_array_length
 
     @classmethod
@@ -279,6 +281,10 @@ class Jsonformer:
             raise ValueError(f"Unsupported schema type: {schema_type}")
 
     def get_prompt(self) -> str:
+        if self.manual_prompt:
+            template = "{prompt}\n{progress}"
+            return template.format(prompt=self.prompt, progress=self.progress)
+
         template = """{prompt}\nOutput result in the following JSON schema format:\n{schema}\nConsider carefully when to populate arrays and when to leave them empty. Remember empty arrays are often appropriate based on the request.\nResult: {progress}"""
         prompt = template.format(
             prompt=self.prompt,
@@ -331,6 +337,7 @@ def custom_generate_reply(question, original_question, seed, state, eos_token, s
         json_schema=json.loads(params['json_schema']),
         prompt=question,
         temperature=state['temperature'],
+        manual_prompt=params['manual_prompt'],
     )
     
     return jsonformer()
