@@ -44,6 +44,8 @@ class Jsonformer:
                 match = re.match(stopping_regex, response)
                 if match:
                     return match.group(regex_return_group)
+        if shared.stop_everything:
+            return ''
         if stopping_regex:
             raise ValueError("Failed to find match for stopping regex before end of response")
         return response
@@ -62,6 +64,8 @@ class Jsonformer:
         try:
             return float(response)
         except ValueError:
+            if shared.stop_everything:
+                return ''
             if iterations > 3:
                 raise ValueError("Failed to generate a valid number")
             return self.generate_number((temperature or self.temperature) * 1.3, iterations=iterations + 1)
@@ -81,6 +85,8 @@ class Jsonformer:
             if response == 'true' or response == '1': return True
             elif response == 'false' or response == '0': return False
         except ValueError:
+            if shared.stop_everything:
+                return ''
             if iterations <= 3: 
                 return self.generate_boolean((temperature or self.temperature) * 1.3, iterations=iterations + 1)
             raise
@@ -105,6 +111,8 @@ class Jsonformer:
                 regex_return_group=1,
             )
         except ValueError:
+            if shared.stop_everything:
+                return ''
             if iterations < 3: 
                 print("Warning: failed to generate string. Raising temperature...")
                 return self.generate_string((temperature or self.temperature * 1.3), iterations = iterations + 1)
@@ -233,7 +241,10 @@ class Jsonformer:
     def __call__(self) -> Generator[str, None, None]:
         self.progress = ''
         self.indent = 0
-        yield from self.generate_object(self.json_schema["properties"])
+        for token in self.generate_object(self.json_schema["properties"]):
+            yield token
+            if shared.stop_everything:
+                break
 
 def custom_generate_reply(question, original_question, seed, state, eos_token, stopping_strings, is_chat=False) -> str:
     """ Overrides the main text generation function """
