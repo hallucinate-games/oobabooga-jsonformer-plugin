@@ -148,15 +148,31 @@ class Jsonformer:
         yield from self.add_to_progress('}')
 
     def generate_array(self, item_schema: Dict[str, Any]) -> Generator[str, None, None]:
+        # "peek" at whether the LLM is thinking of generating elements or leaving
+        # the array empty by checking what the first couple non-whitespace character are
+        # and act accordingly.
+        first_non_whitespace_characters = self.get_next_tokens(
+            {
+                'temperature': self.temperature,
+                'max_new_tokens': 6,
+            },
+            stopping_regex=r'\s*([^\s]\s*[^\s])',
+            regex_return_group=1
+        )
+        if first_non_whitespace_characters[-1] == ']':
+            # The model wants to render an empty array. So be it.
+            yield from self.add_to_progress('[]')
+            return
+        # The model wanted to render an array, so force it to
+        # do so, but with the appropriate types.
         yield from self.add_to_progress('[')
         yield from self.apply_newline()
         self.increase_indent()
 
-        # Force at least one element in array
         yield from self.apply_indent()
         yield from self.generate_value(item_schema)
 
-        for _ in range(self.max_array_length):
+        for _ in range(self.max_array_length - 1):
             # Use the model as an oracle as to whether or not it would
             # generate another element by checking whether or not it would
             # next generate a comma.
@@ -206,7 +222,7 @@ class Jsonformer:
             raise ValueError(f"Unsupported schema type: {schema_type}")
 
     def get_prompt(self) -> str:
-        template = """{prompt}\nOutput result in the following JSON schema format:\n{schema}\nResult: {progress}"""
+        template = """{prompt}\nOutput result in the following JSON schema format:\n{schema}\nConsider carefully when to populate arrays and when to leave them empty. Remember empty arrays are often appropriate based on the request.\nResult: {progress}"""
         prompt = template.format(
             prompt=self.prompt,
             schema=json.dumps(self.json_schema),
@@ -229,6 +245,7 @@ def custom_generate_reply(question, original_question, seed, state, eos_token, s
             "is_student": {"type": "boolean"},
             "courses": {
                 "type": "array",
+                "allowed_empty": True,
                 "items": {"type": "string"}
             }
         }
