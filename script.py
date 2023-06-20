@@ -75,9 +75,9 @@ class Jsonformer:
         # They usually stop after the first bool to follow their own
         # pattern they've established, but it happens often enough we
         # might as well capture the intent.
-        stopping_regex = r'true|false|[01]'
+        stopping_regex = r'\s*(true|false|[01])'
         try:
-            response = self.get_next_tokens(settings, stopping_regex)
+            response = self.get_next_tokens(settings, stopping_regex, regex_return_group=1)
             if response == 'true' or response == '1': return True
             elif response == 'false' or response == '0': return False
         except ValueError:
