@@ -1,8 +1,6 @@
 import json
 from itertools import chain
-import queue
-import threading
-from typing import List, Dict, Any, Callable, Generator, Optional, TypedDict
+from typing import Dict, Any, Callable, Generator, Optional, TypedDict
 import random
 import re
 
@@ -15,8 +13,6 @@ class GenerationSettings(TypedDict):
 
 # Largely based on and inspired by https://github.com/1rgs/jsonformer
 class Jsonformer:
-    value: Dict[str, Any] = {}
-
     def __init__(
         self,
         generation_func: Callable[[str, GenerationSettings], Generator[str, None, None]],
@@ -44,8 +40,6 @@ class Jsonformer:
             generation_settings,
         )
         for i, response in enumerate(response_generator):
-            print(i)
-            print(response)
             if stopping_regex:
                 match = re.match(stopping_regex, response)
                 if match:
@@ -116,12 +110,12 @@ class Jsonformer:
                 return self.generate_string((temperature or self.temperature * 1.3), iterations = iterations + 1)
             raise
 
-    def add_to_progress(self, s: str):
+    def add_to_progress(self, s: str) -> Generator[str, None, None]:
         self.progress += s
-        self.output_queue.put(self.progress)
+        yield self.progress
 
-    def apply_indent(self):
-        self.add_to_progress(' ' * self.indent)
+    def apply_indent(self) -> Generator[str, None, None]:
+        yield from self.add_to_progress(' ' * self.indent)
 
     def increase_indent(self):
         self.indent += 4
@@ -129,43 +123,38 @@ class Jsonformer:
     def decrease_indent(self):
         self.indent -= 4
 
-    def apply_newline(self):
-        self.add_to_progress('\n')
+    def apply_newline(self) -> Generator[str, None, None]:
+        yield from self.add_to_progress('\n')
 
-    def apply_key(self, key):
-        self.apply_indent()
-        self.add_to_progress(''.join(['"', key, '": ']))
+    def apply_key(self, key) -> Generator[str, None, None]:
+        yield from self.apply_indent()
+        yield from self.add_to_progress(''.join(['"', key, '": ']))
 
-    def generate_object(self, properties: Dict[str, Any]) -> Dict[str, Any]:
-        obj = {}
-        self.add_to_progress('{')
+    def generate_object(self, properties: Dict[str, Any]) -> Generator[str, None, None]:
+        yield from self.add_to_progress('{')
         properties = list(properties.items())
         if not len(properties):
-            self.add_to_progress('}')
+            yield from self.add_to_progress('}')
             return
         self.increase_indent()
         for i, (key, schema) in enumerate(properties):
-            self.apply_newline()
-            value = self.generate_value(schema, key)
-            obj[key] = value
+            yield from self.apply_newline()
+            yield from self.generate_value(schema, key)
             if i != len(properties) - 1:
-                self.add_to_progress(',')
-        self.apply_newline()
+                yield from self.add_to_progress(',')
+        yield from self.apply_newline()
         self.decrease_indent()
-        self.apply_indent()
-        self.add_to_progress('}')
-        return obj
+        yield from self.apply_indent()
+        yield from self.add_to_progress('}')
 
-    def generate_array(self, item_schema: Dict[str, Any]) -> list:
-        array = []
-        self.add_to_progress('[')
-        self.apply_newline()
+    def generate_array(self, item_schema: Dict[str, Any]) -> Generator[str, None, None]:
+        yield from self.add_to_progress('[')
+        yield from self.apply_newline()
         self.increase_indent()
 
         # Force at least one element in array
-        self.apply_indent()
-        forced_element = self.generate_value(item_schema)
-        array.append(forced_element)
+        yield from self.apply_indent()
+        yield from self.generate_value(item_schema)
 
         for _ in range(self.max_array_length):
             # Use the model as an oracle as to whether or not it would
@@ -183,49 +172,40 @@ class Jsonformer:
                 },
                 prompt_override=self.get_prompt().rstrip('"')
             )
-            print(f'NEXT TOKENS: {next_tokens}')
             will_gen_another_element = ',' in next_tokens[:2]
             if not will_gen_another_element:
                 break
-            self.add_to_progress(',')
-            self.apply_newline()
-            self.apply_indent()
-            new_element = self.generate_value(item_schema)
-            array.append(new_element)
-        self.apply_newline()
+            yield from self.add_to_progress(',')
+            yield from self.apply_newline()
+            yield from self.apply_indent()
+            yield from self.generate_value(item_schema)
+        yield from self.apply_newline()
         self.decrease_indent()
-        self.apply_indent()
-        self.add_to_progress(']')
-        return array
+        yield from self.apply_indent()
+        yield from self.add_to_progress(']')
         
-    def generate_value(self, schema: Dict[str, Any], key: Optional[str] = None) -> Any:
+    def generate_value(self, schema: Dict[str, Any], key: Optional[str] = None) -> Generator[str, None, None]:
         schema_type = schema["type"]
         if key:
-            self.apply_key(key)
+            yield from self.apply_key(key)
         if schema_type == "number":
-            num_val = self.generate_number()
-            self.add_to_progress(str(num_val))
-            return num_val
+            yield from self.add_to_progress(str(self.generate_number()))
         elif schema_type == "boolean":
-            bool_val = self.generate_boolean()
-            self.add_to_progress(str(bool_val).lower())
-            return bool_val
+            yield from self.add_to_progress(str(self.generate_boolean()).lower())
         elif schema_type == "string":
-            self.add_to_progress('"')
-            string_val = self.generate_string()
-            self.add_to_progress(string_val)
-            self.add_to_progress('"')
-            return string_val
+            yield from self.add_to_progress('"')
+            yield from self.add_to_progress(self.generate_string())
+            yield from self.add_to_progress('"')
         elif schema_type == "array":
             # generate array handles its own serialization to self.progress
-            return self.generate_array(schema["items"])
+            yield from self.generate_array(schema["items"])
         elif schema_type == "object":
             # generate_object handles its own serialization to self.progress
-            return self.generate_object(schema["properties"])
+            yield from self.generate_object(schema["properties"])
         else:
             raise ValueError(f"Unsupported schema type: {schema_type}")
 
-    def get_prompt(self):
+    def get_prompt(self) -> str:
         template = """{prompt}\nOutput result in the following JSON schema format:\n{schema}\nResult: {progress}"""
         prompt = template.format(
             prompt=self.prompt,
@@ -234,28 +214,10 @@ class Jsonformer:
         )
         return prompt
 
-    def _generator(self):
-        while True:
-            item = self.output_queue.get()
-            if item is self.sentinel_object:
-                break
-            yield item
-        print("JSON GENERATION COMPLETE")
-        print("GENERATED JSON BELOW")
-        print(self.progress)
-
     def __call__(self) -> Generator[str, None, None]:
         self.progress = ''
-        self.output_queue = queue.Queue()
-        self.sentinel_object = object()
         self.indent = 0
-
-        threading.Thread(
-            target=self.generate_object, 
-            args=(self.json_schema["properties"],)
-        ).start()
-        
-        return self._generator()
+        yield from self.generate_object(self.json_schema["properties"])
 
 def custom_generate_reply(question, original_question, seed, state, eos_token, stopping_strings, is_chat=False) -> str:
     """ Overrides the main text generation function """
