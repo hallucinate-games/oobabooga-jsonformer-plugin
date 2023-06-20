@@ -1,11 +1,33 @@
 import json
 from itertools import chain
+import textwrap
 from typing import Dict, Any, Callable, Generator, Optional, TypedDict
 import random
 import re
+import time
+
+import gradio as gr
 
 import modules.text_generation as text_generation
 import modules.shared as shared
+
+params = {
+    "json_schema": textwrap.dedent("""
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"},
+                "is_student": {"type": "boolean"},
+                "courses": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "allowed_empty": true
+                }
+            }
+        }"""),
+    "manual_prompt": False,
+}
 
 class GenerationSettings(TypedDict):
     temperature: float
@@ -27,6 +49,33 @@ class Jsonformer:
         self.prompt = prompt
         self.temperature = temperature
         self.max_array_length = max_array_length
+
+    @classmethod
+    def validate_schema(cls, schema: Dict[str, Any]):
+        if not isinstance(schema, dict):
+            pretty = json.dumps(schema)
+            raise ValueError(f"Expected a schema object, but got {pretty}")
+        if "type" not in schema:
+            pretty = json.dumps(schema)
+            raise ValueError(f"Missing `type` field in object: {pretty}")
+        if schema["type"] == "object":
+            if "properties" not in schema:
+                pretty = json.dumps(schema)
+                raise ValueError(f"Missing `properties` field in object: {pretty}")
+            if not isinstance(schema["properties"], dict):
+                pretty = json.dumps(schema)
+                raise ValueError(f"Value of `properties` field must be an object in {pretty}")
+            for key, value in schema["properties"].items():
+                cls.validate_schema(schema["properties"][key])
+        elif schema["type"] == "array":
+            if "items" not in schema:
+                pretty = json.dumps(schema)
+                raise ValueError(f"Missing `items` field in array: {pretty}")
+            cls.validate_schema(schema['items'])
+        elif schema["type"] not in ["string", "number", "boolean"]:
+            pretty = json.dumps(schema)
+            schema_type = schema["type"]
+            raise ValueError(f"Invalid `type` value `{schema_type}` in object: {pretty}")
 
     def get_next_tokens(
             self, 
@@ -241,26 +290,13 @@ class Jsonformer:
     def __call__(self) -> Generator[str, None, None]:
         self.progress = ''
         self.indent = 0
-        for token in self.generate_object(self.json_schema["properties"]):
+        for token in self.generate_value(self.json_schema):
             yield token
             if shared.stop_everything:
                 break
 
 def custom_generate_reply(question, original_question, seed, state, eos_token, stopping_strings, is_chat=False) -> str:
     """ Overrides the main text generation function """
-    schema = {
-        "type": "object",
-        "properties": {
-            "name": {"type": "string"},
-            "age": {"type": "number"},
-            "is_student": {"type": "boolean"},
-            "courses": {
-                "type": "array",
-                "allowed_empty": True,
-                "items": {"type": "string"}
-            }
-        }
-    }
 
     # Select text generation function
     generate_func = None
@@ -292,10 +328,77 @@ def custom_generate_reply(question, original_question, seed, state, eos_token, s
 
     jsonformer = Jsonformer(
         generation_func=wrapped_generate_func,
-        json_schema=schema,
+        json_schema=json.loads(params['json_schema']),
         prompt=question,
         temperature=state['temperature'],
     )
     
     return jsonformer()
+
+def ui():
+    with gr.Accordion("Click for more information...", open=False):
+        gr.Markdown(textwrap.dedent("""
+        ## About
+        This extension forces the output to conform to a specified JSON schema (or dies trying).
+
+        ## Schema format
+        The schema is formatted in JSON. If you're in a hurry, here's an example schema:
+
+        ```json
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"},
+                "is_student": {"type": "boolean"},
+                "courses": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "allowed_empty": true
+                }
+            }
+        }
+        ```
+
+        Every value expects a `type` field, which can be one of `object`, `array`, `string`, `number`, `boolean`.
+        
+        Strings, numbers, and booleans contain no fields other than `type`.
+
+        `object` contains the `properties` field, which is an object where the keys represent field names and the values are the schema of that field.
+
+        `array` contains `item` field, which is a schema object representing the type of the items in the array
+
+        Note that the schema is permissive to extra fields. These fields are ignored by JSONformer, but they may influence the behavior of the LLM, for example, you can forbid or allow empty arrays like in the example. This kind of hinting is not bullet-proof, but is surprisingly effective if utilized with care."""))
+
+    with gr.Row():
+        schema_codebox = gr.Code(params['json_schema'], lines=14, language='json', label='JSON schema', interactive=True)
+
+    with gr.Row():
+        manual_prompt_checkbox = gr.Checkbox(params['manual_prompt'], label="Manual prompt", info=textwrap.dedent("""
+        USE WITH CAUTION! By default, this plugin appends to your prompt with some extra instructions for the LLM which also contain the schema. So you do not 
+        need to include the schema in your prompt manually, nor do you need to specify that the result be in JSON in your prompt. Note that this happens behind 
+        the scenes and is invisible to you in the UI. If you would like to override this behavior and maintain full control of your prompt, you can enable this 
+        checkbox. The plugin will still enforce the specified JSON schema, but you're on your own for informing the LLM that it needs to conform to the schema. 
+        This increases the likliehood of the LLM failing to render and may cause the plugin to crash because the LLM isn't conforming to the schema."""))
+
+    with gr.Row():
+        info_box = gr.Textbox("", interactive=False, visible=False, show_label=False)
+
+    with gr.Row():
+        save_settings_button = gr.Button("Save JSONformer settings", variant='primary')
+
+    def save_settings(schema, manual_prompt):
+        try:
+            json_schema = json.loads(schema)
+            Jsonformer.validate_schema(json_schema)
+            params.update({
+                "json_schema": schema,
+                "manual_prompt": manual_prompt,
+            })
+            now = time.ctime()
+            return gr.update(value=f"Successfully saved settings at {now}", visible=True)
+        except Exception as e:
+            return gr.update(value=f"ERROR saving settings: {e}", visible=True)
+
+    save_settings_button.click(save_settings, [schema_codebox, manual_prompt_checkbox], [info_box])
 
