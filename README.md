@@ -2,7 +2,7 @@
 
 This is a plugin for the [oobabooga/text-generation-webui](https://github.com/oobabooga/text-generation-webui)
 
-This plugin forces models to output valid JSON of a specified schema. Most of the code was strongly inspired by [JSONFormer](https://github.com/1rgs/jsonformer) but adapted for use with oobabooga and some additional tweaks made to better handle the weird variety of output that can come from quite small models.
+This plugin forces models to output valid JSON of a specified schema. Most of the code was strongly inspired by [JSONFormer](https://github.com/1rgs/jsonformer) but adapted for use with oobabooga. Includes some additional tweaks to better handle the weird variety of output that can come from smaller models.
 
 Install by cloning this repo into the `extensions` directory of `text-generation-webui` e.g.
 ```shell
