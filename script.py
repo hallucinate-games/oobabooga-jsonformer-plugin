@@ -307,12 +307,19 @@ def custom_generate_reply(question, original_question, seed, state, eos_token, s
 
     # Select text generation function
     generate_func = None
-    if shared.model_type in ['rwkv', 'llamacpp']:
+    if shared.model_name == 'None' or shared.model is None:
+        print("No model is loaded! Select one in the Model tab.")
+        yield ''
+        return
+
+    if shared.model.__class__.__name__ in ['LlamaCppModel', 'RWKVModel', 'ExllamaModel']:
         generate_func = text_generation.generate_reply_custom
     elif shared.args.flexgen:
         generate_func = text_generation.generate_reply_flexgen
     else:
         generate_func = text_generation.generate_reply_HF
+
+    shared.stop_everything = False
 
     if not params['enabled']:
         # Cede control back to oobabooga, the user has requested that JSONformer not interfere
@@ -345,7 +352,7 @@ def custom_generate_reply(question, original_question, seed, state, eos_token, s
         manual_prompt=params['manual_prompt'],
     )
     
-    return jsonformer()
+    yield from jsonformer()
 
 def ui():
     with gr.Accordion("Click for more information...", open=False):
