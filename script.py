@@ -302,7 +302,7 @@ class Jsonformer:
             if shared.stop_everything:
                 break
 
-def custom_generate_reply(question, original_question, seed, state, eos_token, stopping_strings, is_chat=False) -> str:
+def custom_generate_reply(question, original_question, seed, state, stopping_strings, is_chat=False) -> str:
     """ Overrides the main text generation function """
 
     # Select text generation function
@@ -323,7 +323,7 @@ def custom_generate_reply(question, original_question, seed, state, eos_token, s
 
     if not params['enabled']:
         # Cede control back to oobabooga, the user has requested that JSONformer not interfere
-        return generate_func(question, original_question, seed, state, eos_token, stopping_strings, is_chat)
+        return generate_func(question, original_question, seed, state, stopping_strings, is_chat)
 
     # Since we generate many times, we need to lock the seed,
     # so we have to account for when the seed is "random" and
@@ -342,7 +342,7 @@ def custom_generate_reply(question, original_question, seed, state, eos_token, s
             key: value
             for key, value in chain(state.items(), state_overrides.items())
         }
-        return generate_func(wrapped_prompt, original_question, locked_seed, wrapped_state, eos_token, stopping_strings, is_chat)
+        return generate_func(wrapped_prompt, original_question, locked_seed, wrapped_state, stopping_strings, is_chat)
 
     jsonformer = Jsonformer(
         generation_func=wrapped_generate_func,
