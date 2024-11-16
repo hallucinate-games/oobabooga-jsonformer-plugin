@@ -1,3 +1,5 @@
+# DEPRECATED: Use a model that supports function calling instead
+
 # oobabooga-jsonformer-plugin
 
 This is a plugin for the [oobabooga/text-generation-webui](https://github.com/oobabooga/text-generation-webui)
